@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using System.Xml;
 using TreeDataStructures.Interfaces;
 
 namespace TreeDataStructures.Core;
@@ -21,8 +22,43 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     
     public virtual void Add(TKey key, TValue value)
     {
-        throw new NotImplementedException(
-            "Implement standard BST add logic using <CreateNode(key, value)> and OnNodeAdded(newNode)");
+        //throw new NotImplementedException(
+        //    "Implement standard BST add logic using <CreateNode(key, value)> and OnNodeAdded(newNode)");
+        TNode node = CreateNode(key, value);
+
+        if (Root == null) {
+            Root = node;
+            OnNodeAdded(node); // maybe useless
+            return;
+        }
+
+        int cmp = 0;
+        TNode prev = Root;
+        TNode? current = Root;
+
+        while (current != null)
+        {
+            cmp = Comparer.Compare(node.Key, current.Key);
+            if (cmp == 0)
+            {
+                current.Value = value;
+                OnNodeAdded(current); 
+                return;
+            }
+            prev = current;
+            current = cmp < 0 ? current.Left : current.Right;
+        }
+
+        if (cmp < 0)
+        {
+            prev.Left = node;
+        }
+        else
+        {
+            prev.Right = node;
+        }
+        node.Parent = prev;
+        OnNodeAdded(node);
     }
 
     
@@ -39,7 +75,27 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     
     protected virtual void RemoveNode(TNode node)
     {
-        throw new NotImplementedException("Implement standard BST delete logic using Transplant helper");
+        //throw new NotImplementedException("Implement standard BST delete logic using Transplant helper");
+        if (node.Left == null && node.Right == null)
+        {
+            Transplant(node, null);
+        }
+        else if (node.Left != null && node.Right != null)
+        {
+            TNode receiver = GetSmallestSubtreeNode(node.Right);
+            node.Value = receiver.Value;
+            node.Key = receiver.Key;
+            RemoveNode(receiver);
+        }
+        else if (node.Left != null) // Only left child
+        {
+            Transplant(node, node.Left);
+        }
+        else
+        {
+            Transplant(node, node.Right);
+        }
+        OnNodeRemoved(node);
     }
 
     public virtual bool ContainsKey(TKey key) => FindNode(key) != null;
@@ -142,6 +198,15 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             u.Parent.Right = v;
         }
         v?.Parent = u.Parent;
+    }
+
+    protected TNode GetSmallestSubtreeNode(TNode node)
+    {
+        while (node.Left != null)
+        {
+            node = node.Left;
+        }
+        return node;
     }
     #endregion
     
