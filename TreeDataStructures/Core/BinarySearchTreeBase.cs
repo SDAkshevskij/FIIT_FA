@@ -285,9 +285,11 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         IEnumerable<TreeEntry<TKey, TValue>>,
         IEnumerator<TreeEntry<TKey, TValue>>
     {
-        private readonly Stack<TNode> NodeStack;
-        private readonly TraversalStrategy _strategy; // or make it template parameter?
-        
+        private Stack<TNode> _stack;
+        private TNode prevNode;
+        private readonly TraversalStrategy _strategy;
+        private readonly TNode _root;
+        private TreeEntry<TKey, TValue> _current;
         public IEnumerator<TreeEntry<TKey, TValue>> GetEnumerator() => this;
         IEnumerator IEnumerable.GetEnumerator() => this;
         
@@ -297,50 +299,180 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         public TreeIterator(TNode root, TraversalStrategy strategy)
         {
             this._strategy = strategy;
-            Stack<TNode> stack = new Stack<TNode>();
-            FillStack(stack, root);
-            NodeStack = stack;
+            this._root = root;
+            this.prevNode = root;
+            Stack<TNode> _stack = new Stack<TNode>();
+            switch (strategy)
+            {
+                case TraversalStrategy.PreOrder:
+                case TraversalStrategy.PreOrderReverse:
+                    _stack.Push(root);
+                    break;
+                case TraversalStrategy.InOrder:
+                    FillFullLeft(_stack, this._root);
+                    break;
+                case TraversalStrategy.InOrderReverse:
+                    FillFullRight(_stack, this._root);
+                    break;
+                case TraversalStrategy.PostOrder:
+                    FillFullLeftRight(_stack, this._root);
+                    break;
+                case TraversalStrategy.PostOrderReverse:
+                    FillFullRightLeft(_stack, this._root);
+                    break;
+
+            }
         }
 
-        private void FillStack(Stack<TNode> stack, TNode? node)
+        private void FillFullLeft(Stack<TNode> stack, TNode? node)
         {
-            if (node == null) return;
-
-            bool isReverse = (this._strategy & 
-                (TraversalStrategy.InOrderReverse | TraversalStrategy.PreOrderReverse | 
-                TraversalStrategy.PostOrderReverse)) != 0;
-
-            TNode? nextNode = isReverse ? node.Right : node.Left;
-            TNode? nextNextNode = isReverse ? node.Left : node.Right;
-
-            if ((this._strategy == TraversalStrategy.PostOrder) ||
-                (this._strategy == TraversalStrategy.PostOrderReverse)) {
-                stack.Push(node);
-            }
-
-            FillStack(stack, nextNode);
-
-            if ((this._strategy == TraversalStrategy.InOrder) ||
-                (this._strategy == TraversalStrategy.InOrderReverse))
+            while(node != null)
             {
                 stack.Push(node);
+                node = node.Left;
             }
-
-            FillStack(stack, nextNextNode);
-
-            if ((this._strategy == TraversalStrategy.PreOrder) ||
-                (this._strategy == TraversalStrategy.PreOrderReverse))
+        }
+        private void FillFullRight(Stack<TNode> stack, TNode? node)
+        {
+            while (node != null)
             {
                 stack.Push(node);
+                node = node.Right;
             }
+        }
+        private void FillFullLeftRight(Stack<TNode> stack, TNode? node)
+        {
+            while (node != null)
+            {
+                stack.Push(node);
+                if (node.Left == null && node.Right != null)
+                {
+                    node = node.Right;
+                }
+                else
+                {
+                    node = node.Left;
+                }
+            }
+        }
+        private void FillFullRightLeft(Stack<TNode> stack, TNode? node)
+        {
+            while (node != null)
+            {
+                stack.Push(node);
+                if (node.Right == null && node.Left != null)
+                {
+                    node = node.Left;
+                }
+                else
+                {
+                    node = node.Right;
+                }
+            }
+        }
+        private bool MoveNextPreOrder()
+        {
+            if (this._stack.Count == 0) return false;
+            TNode node = this._stack.Pop();
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+            if (node.Right != null) this._stack.Push(node.Right);
+            if (node.Left != null) this._stack.Push(node.Left);
+
+            return true;
+        }
+        private bool MoveNextPreOrderReverse()
+        {
+            if (this._stack.Count == 0) return false;
+            TNode node = this._stack.Pop();
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+            if (node.Left != null) this._stack.Push(node.Left);
+            if (node.Right != null) this._stack.Push(node.Right);
+
+            return true;
+        }
+        private bool MoveNextInorder()
+        {
+            if (this._stack.Count == 0) return false;
+            TNode node = this._stack.Pop();
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+
+            if (node.Right != null)
+            {
+                FillFullLeft(_stack, node.Right);
+            }
+            return true;
+        }
+        private bool MoveNextInorderReverse()
+        {
+            if (this._stack.Count == 0) return false;
+            TNode node = this._stack.Pop();
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+
+            if (node.Left != null)
+            {
+                FillFullRight(_stack, node.Left);
+            }
+            return true;
+        }
+        private bool MoveNextPostOrder()
+        {
+            if (this._stack.Count == 0) return false;
+            TNode node = _stack.Peek();
+            if (node.Right != null && prevNode != node.Right)
+            {
+                FillFullLeftRight(_stack, prevNode.Right);
+                return MoveNextPostOrder();
+            }
+            else
+            {
+                prevNode = _stack.Pop();
+                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+            }
+            return true;
+        }
+        private bool MoveNextPostOrderReverse()
+        {
+            if (this._stack.Count == 0) return false;
+            TNode node = _stack.Peek();
+            if (node.Left != null && prevNode != node.Left)
+            {
+                FillFullRightLeft(_stack, prevNode.Left);
+                return MoveNextPostOrderReverse();
+            }
+            else
+            {
+                prevNode = _stack.Pop();
+                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+            }
+            return true;
         }
         public bool MoveNext()
         {
-            if (_strategy == TraversalStrategy.InOrder)
+            if (_strategy == TraversalStrategy.PreOrder)
             {
-                throw new NotImplementedException();
+                return MoveNextPreOrder();
             }
-            throw new NotImplementedException("Strategy not implemented");
+            else if (_strategy == TraversalStrategy.PreOrderReverse)
+            {
+                return MoveNextPreOrderReverse();
+            }
+            else if (_strategy == TraversalStrategy.InOrder)
+            {
+                return MoveNextInorder();
+            }
+            else if (_strategy == TraversalStrategy.InOrderReverse)
+            {
+                return MoveNextInorderReverse();
+            }
+            else if (_strategy == TraversalStrategy.PostOrder)
+            {
+                return MoveNextPostOrder();
+            }
+            else if (_strategy == TraversalStrategy.PostOrderReverse)
+            {
+                return MoveNextPostOrderReverse();
+            }
+            return false;
         }
         
         public void Reset()
@@ -356,14 +488,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     }
 
     [Flags]
-    private enum TraversalStrategy { 
-        InOrder = 1, 
-        PreOrder = 2, 
-        PostOrder = 4, 
-        InOrderReverse = 8, 
-        PreOrderReverse = 16, 
-        PostOrderReverse = 32
-    }
+    private enum TraversalStrategy { InOrder, PreOrder, PostOrder, InOrderReverse, PreOrderReverse, PostOrderReverse}
     
     public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
     {
