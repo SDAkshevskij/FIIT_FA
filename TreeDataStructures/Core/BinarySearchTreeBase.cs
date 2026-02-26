@@ -285,7 +285,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         IEnumerable<TreeEntry<TKey, TValue>>,
         IEnumerator<TreeEntry<TKey, TValue>>
     {
-        // probably add something here
+        private readonly Stack<TNode> NodeStack;
         private readonly TraversalStrategy _strategy; // or make it template parameter?
         
         public IEnumerator<TreeEntry<TKey, TValue>> GetEnumerator() => this;
@@ -294,7 +294,46 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         public TreeEntry<TKey, TValue> Current => throw new NotImplementedException();
         object IEnumerator.Current => Current;
         
-        
+        public TreeIterator(TNode root, TraversalStrategy strategy)
+        {
+            this._strategy = strategy;
+            Stack<TNode> stack = new Stack<TNode>();
+            FillStack(stack, root);
+            NodeStack = stack;
+        }
+
+        private void FillStack(Stack<TNode> stack, TNode? node)
+        {
+            if (node == null) return;
+
+            bool isReverse = (this._strategy & 
+                (TraversalStrategy.InOrderReverse | TraversalStrategy.PreOrderReverse | 
+                TraversalStrategy.PostOrderReverse)) != 0;
+
+            TNode? nextNode = isReverse ? node.Right : node.Left;
+            TNode? nextNextNode = isReverse ? node.Left : node.Right;
+
+            if ((this._strategy == TraversalStrategy.PostOrder) ||
+                (this._strategy == TraversalStrategy.PostOrderReverse)) {
+                stack.Push(node);
+            }
+
+            FillStack(stack, nextNode);
+
+            if ((this._strategy == TraversalStrategy.InOrder) ||
+                (this._strategy == TraversalStrategy.InOrderReverse))
+            {
+                stack.Push(node);
+            }
+
+            FillStack(stack, nextNextNode);
+
+            if ((this._strategy == TraversalStrategy.PreOrder) ||
+                (this._strategy == TraversalStrategy.PreOrderReverse))
+            {
+                stack.Push(node);
+            }
+        }
         public bool MoveNext()
         {
             if (_strategy == TraversalStrategy.InOrder)
@@ -315,9 +354,16 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             // TODO release managed resources here
         }
     }
-    
-    
-    private enum TraversalStrategy { InOrder, PreOrder, PostOrder, InOrderReverse, PreOrderReverse, PostOrderReverse }
+
+    [Flags]
+    private enum TraversalStrategy { 
+        InOrder = 1, 
+        PreOrder = 2, 
+        PostOrder = 4, 
+        InOrderReverse = 8, 
+        PreOrderReverse = 16, 
+        PostOrderReverse = 32
+    }
     
     public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
     {
