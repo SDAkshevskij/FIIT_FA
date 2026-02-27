@@ -109,7 +109,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             node.Key = receiver.Key;
             RemoveNode(receiver);
         }
-        else if (node.Left != null) // Only left child
+        else if (node.Left != null)
         {
             Transplant(node, node.Left);
             OnNodeRemoved(node.Parent, node.Left);
@@ -283,19 +283,19 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     }
     #endregion
     
-    public IEnumerable<TreeEntry<TKey, TValue>>  InOrder() => InOrderTraversal(Root);
+    public IEnumerable<TreeEntry<TKey, TValue>>  InOrder() => InOrderTraversal(Root, 0);
 
-    private IEnumerable<TreeEntry<TKey, TValue>> InOrderTraversal(TNode? node)
+    private IEnumerable<TreeEntry<TKey, TValue>> InOrderTraversal(TNode? node, int depth)
     {
         if (node == null)
             yield break;
 
-        foreach (var leftItem in InOrderTraversal(node.Left))
+        foreach (var leftItem in InOrderTraversal(node.Left, depth + 1))
             yield return leftItem;
 
-        yield return new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+        yield return new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
 
-        foreach (var rightItem in InOrderTraversal(node.Right))
+        foreach (var rightItem in InOrderTraversal(node.Right, depth + 1))
             yield return rightItem;
     }
 
@@ -327,7 +327,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     {
         if (Root == null)
             return Enumerable.Empty<TreeEntry<TKey, TValue>>();
-        return new TreeIterator(Root, TraversalStrategy.PreOrderReverse);
+        return new TreeIterator(Root, TraversalStrategy.PostOrderReverse);
     }
     
     /// <summary>
@@ -340,6 +340,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     {
         private Stack<TNode>? _stack;
         private TNode prevNode;
+        private Stack<int>? _depthStack;
         private readonly TraversalStrategy _strategy;
         private readonly TNode _root;
         private TreeEntry<TKey, TValue> _current;
@@ -408,19 +409,37 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         {
             if (this._stack == null || this._stack.Count == 0) return false;
             TNode node = this._stack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
-            if (node.Right != null) this._stack.Push(node.Right);
-            if (node.Left != null) this._stack.Push(node.Left);
+            int depth = this._depthStack.Pop();
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
 
+            if (node.Right != null)
+            {
+                this._stack.Push(node.Right);
+                this._depthStack.Push(depth + 1);
+            }
+            if (node.Left != null)
+            {
+                this._stack.Push(node.Left);
+                this._depthStack.Push(depth + 1);
+            }
             return true;
         }
         private bool MoveNextPreOrderReverse()
         {
             if (this._stack == null || this._stack.Count == 0) return false;
             TNode node = this._stack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
-            if (node.Left != null) this._stack.Push(node.Left);
-            if (node.Right != null) this._stack.Push(node.Right);
+            int depth = this._depthStack.Pop();
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
+            if (node.Left != null)
+            {
+                this._stack.Push(node.Left);
+                this._depthStack.Push(depth + 1);
+            }
+            if (node.Right != null)
+            {
+                this._stack.Push(node.Right);
+                this._depthStack.Push(depth + 1);
+            }
 
             return true;
         }
@@ -428,7 +447,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         {
             if (this._stack == null || this._stack.Count == 0) return false;
             TNode node = this._stack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, this._stack.Count);
 
             if (node.Right != null)
             {
@@ -440,7 +459,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         {
             if (this._stack == null || this._stack.Count == 0) return false;
             TNode node = this._stack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, this._stack.Count);
 
             if (node.Left != null)
             {
@@ -454,13 +473,13 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             TNode node = _stack.Peek();
             if (node.Right != null && prevNode != node.Right)
             {
-                FillFullLeftRight(_stack, prevNode.Right);
+                FillFullLeftRight(_stack, node.Right);
                 return MoveNextPostOrder();
             }
             else
             {
                 prevNode = _stack.Pop();
-                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, this._stack.Count);
             }
             return true;
         }
@@ -470,13 +489,13 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             TNode node = _stack.Peek();
             if (node.Left != null && prevNode != node.Left)
             {
-                FillFullRightLeft(_stack, prevNode.Left);
+                FillFullRightLeft(_stack, node.Left);
                 return MoveNextPostOrderReverse();
             }
             else
             {
                 prevNode = _stack.Pop();
-                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, 0);
+                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, this._stack.Count);
             }
             return true;
         }
@@ -518,6 +537,8 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
                 case TraversalStrategy.PreOrder:
                 case TraversalStrategy.PreOrderReverse:
                     _stack.Push(this._root);
+                    _depthStack = new Stack<int>();
+                    _depthStack.Push(0);
                     break;
                 case TraversalStrategy.InOrder:
                     FillFullLeft(_stack, this._root);
