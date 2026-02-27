@@ -49,7 +49,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
 
         if (Root == null) {
             Root = node;
-            OnNodeAdded(node); // maybe useless
+            OnNodeAdded(node);
             Count++;
             return;
         }
@@ -246,13 +246,13 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     
     protected void RotateDoubleLeft(TNode x)
     {
-        RotateLeft(x);
+        RotateLeft(x!.Right);
         RotateLeft(x);
     }
     
     protected void RotateDoubleRight(TNode y)
     {
-        RotateRight(y);
+        RotateRight(y.Left);
         RotateRight(y);
     }
     
