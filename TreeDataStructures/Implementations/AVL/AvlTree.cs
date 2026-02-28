@@ -35,25 +35,13 @@ public class AvlTree<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, AvlNode<
         int disbalance = GetDisbalance(node);
         if (Math.Abs(disbalance) > 1)
         {
-            if (disbalance == 2 && GetDisbalance(node!.Left) == 1)
-            {
-                RotateRight(node);
-            }
-            else if (disbalance == -2 && GetDisbalance(node.Right) == -1)
-            {
-                RotateLeft(node);
-            }
-            else if (disbalance == 2 && GetDisbalance(node!.Left) == -1)
-            {
-                RotateBigRight(node);
-            }
-            else if (disbalance == -2 && GetDisbalance(node!.Right) == 1)
-            {
-                RotateBigLeft(node);
-            }
+            if (disbalance > 1 && GetDisbalance(node!.Left) >= 0) RotateRight(node);
+            else if (disbalance < -1 && GetDisbalance(node.Right) <= 0) RotateLeft(node);
+            else if (disbalance > 1 && GetDisbalance(node!.Left) < 0) RotateBigRight(node);
+            else if (disbalance < -1 && GetDisbalance(node!.Right) > 0) RotateBigLeft(node);
             else
             {
-                throw new Exception("Unknow AVL balance situation");
+               // throw new Exception("Unknow AVL balance situation");
             }
         }
         node.Height = CountHeight(node);

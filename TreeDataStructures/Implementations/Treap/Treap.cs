@@ -60,7 +60,6 @@ public class Treap<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, TreapNode<
             return right;
         }
     }
-    
 
     public override void Add(TKey key, TValue value)
     {
@@ -68,6 +67,7 @@ public class Treap<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, TreapNode<
         (var target, var right) = Split(trees.Right, key, includeEqual: true);
         if (target != null)
         {
+            target.Value = value;
             this.Root = Merge(trees.Left, target);
             this.Root = Merge(this.Root, right);
             return;
@@ -76,6 +76,7 @@ public class Treap<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, TreapNode<
         var leftTree = Merge(trees.Left, node);
         var fullTree = Merge(leftTree, trees.Right);
         this.Root = fullTree;
+        this.Count++;
     }
 
     public override bool Remove(TKey key)
@@ -84,6 +85,7 @@ public class Treap<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, TreapNode<
         (var target, var right) = Split(trees.Right, key, includeEqual: true);
         if (target == null) return false;
         this.Root = Merge(trees.Left, right);
+        this.Count--;
         return true;
     }
 

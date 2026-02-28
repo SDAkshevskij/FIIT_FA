@@ -121,7 +121,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         }
     }
 
-    public virtual bool ContainsKey(TKey key) => FindNode(key) != null;
+    public virtual bool ContainsKey(TKey key) => TryGetValue(key, out _);
     
     public virtual bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
     {
@@ -532,12 +532,12 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         {
             this.prevNode = this._root;
             _stack = new Stack<TNode>();
+            _depthStack = new Stack<int>();
             switch (this._strategy)
             {
                 case TraversalStrategy.PreOrder:
                 case TraversalStrategy.PreOrderReverse:
                     _stack.Push(this._root);
-                    _depthStack = new Stack<int>();
                     _depthStack.Push(0);
                     break;
                 case TraversalStrategy.InOrder:

@@ -67,6 +67,13 @@ public class RedBlackTree<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, RbN
             RbNode<TKey, TValue> parent = curNode.Parent;
             bool isNodeLeft = curNode.IsLeftChild;
             RbNode<TKey, TValue> sibling = isNodeLeft ? parent.Right : parent.Left;
+
+            if (sibling == null)
+            {
+                curNode = parent;
+                continue;
+            }
+
             if (IsRed(sibling))
             {
                 parent.Color = RbColor.Red;
