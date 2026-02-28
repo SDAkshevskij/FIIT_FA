@@ -12,7 +12,7 @@ namespace YourTestNamespace
     {
         static void Main()
         {
-            Treap<int, string> tree = new Treap<int, string>();
+            BinarySearchTree<int, string> tree = new BinarySearchTree<int, string>();
 
             tree.Add(10, "Root");
             tree.Add(5, "Left");
