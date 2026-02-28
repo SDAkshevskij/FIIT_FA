@@ -14,12 +14,13 @@ namespace YourTestNamespace
         {
             Treap<int, string> tree = new Treap<int, string>();
 
-            tree.Add(10, "Initial");
-            tree[10] = "Updated"; // Тест индексатора set
+            tree.Add(10, "Root");
+            tree.Add(5, "Left");
+            tree.Add(15, "Right");
 
             foreach (var node in tree.InOrder())
             {
-                Console.WriteLine(node);
+                Console.WriteLine(node.ToString());
             }
         }
     }

@@ -321,13 +321,13 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     {
         if (Root == null)
             return Enumerable.Empty<TreeEntry<TKey, TValue>>();
-        return new TreeIterator(Root, TraversalStrategy.PreOrderReverse);
+        return new TreeIterator(Root, TraversalStrategy.PostOrderReverse);
     }
     public IEnumerable<TreeEntry<TKey, TValue>>  PostOrderReverse()
     {
         if (Root == null)
             return Enumerable.Empty<TreeEntry<TKey, TValue>>();
-        return new TreeIterator(Root, TraversalStrategy.PostOrderReverse);
+        return new TreeIterator(Root, TraversalStrategy.PreOrderReverse);
     }
     
     /// <summary>
