@@ -77,6 +77,8 @@ public sealed class BetterBigInteger : IBigInteger
         _signBit = isNegative ? 1 : 0;
     }
 
+
+
     private static (uint[] digits, bool isNegative) ParseStringToDigits(string value, int radix)
     {
         if (value == null)
