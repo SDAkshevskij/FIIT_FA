@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Xml;
@@ -186,7 +187,10 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         TNode? mainParent = x.Parent;
         TNode right = x.Right;
 
-        if (x.IsLeftChild) mainParent?.Left = right;
+        if (x.IsLeftChild)
+        {
+            mainParent?.Left = right;
+        }
         else mainParent?.Right = right;
 
         x.Right = right.Left;
@@ -246,13 +250,13 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     
     protected void RotateDoubleLeft(TNode x)
     {
-        RotateLeft(x!.Right);
+        RotateLeft(x.Right!);
         RotateLeft(x);
     }
     
     protected void RotateDoubleRight(TNode y)
     {
-        RotateRight(y.Left);
+        RotateRight(y.Left!);
         RotateRight(y);
     }
     
@@ -282,8 +286,8 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         return node;
     }
     #endregion
-    
-    public IEnumerable<TreeEntry<TKey, TValue>>  InOrder() => InOrderTraversal(Root, 0);
+
+    public IEnumerable<TreeEntry<TKey, TValue>> InOrder() => InOrderTraversal(Root, 0);
 
     private IEnumerable<TreeEntry<TKey, TValue>> InOrderTraversal(TNode? node, int depth)
     {
@@ -338,9 +342,9 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         IEnumerable<TreeEntry<TKey, TValue>>,
         IEnumerator<TreeEntry<TKey, TValue>>
     {
-        private Stack<TNode>? _stack;
-        private TNode prevNode;
-        private Stack<int>? _depthStack;
+        private TNode? curNode;
+        private TNode? prevNode;
+        private int curDepth;
         private readonly TraversalStrategy _strategy;
         private readonly TNode _root;
         private TreeEntry<TKey, TValue> _current;
@@ -359,215 +363,473 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             Reset();
         }
 
-        private void FillFullLeft(Stack<TNode> stack, TNode? node, int startDepth = 0)
+        private TNode MoveFullLeft(TNode node)
         {
-            int curDepth = startDepth;
-            while(node != null)
+            while(node.Left != null)
             {
-                stack.Push(node);
                 node = node.Left;
-                this._depthStack.Push(curDepth + 1);
                 curDepth++;
             }
+            return node;
         }
-        private void FillFullRight(Stack<TNode> stack, TNode? node, int startDepth = 0)
+        private TNode MoveFullRight(TNode node)
         {
-            int curDepth = startDepth;
-            while (node != null)
+            while (node.Right != null)
             {
-                stack.Push(node);
                 node = node.Right;
-                this._depthStack.Push(curDepth + 1);
                 curDepth++;
             }
+            return node;
         }
-        private void FillFullLeftRight(Stack<TNode> stack, TNode? node)
+        private TNode MoveFullLeftRight(TNode node, bool reverse)
         {
-            while (node != null)
+            if (reverse)
             {
-                stack.Push(node);
-                if (node.Left == null && node.Right != null)
+                while (node.Left != null || node.Right != null)
                 {
-                    node = node.Right;
-                }
-                else
-                {
-                    node = node.Left;
+                    if (node.Right == null) node = node.Left!;
+                    else node = node.Right;
+                    curDepth++;
                 }
             }
-        }
-        private void FillFullRightLeft(Stack<TNode> stack, TNode? node)
-        {
-            while (node != null)
+            else
             {
-                stack.Push(node);
-                if (node.Right == null && node.Left != null)
+                while (node.Left != null || node.Right != null)
                 {
-                    node = node.Left;
-                }
-                else
-                {
-                    node = node.Right;
+                    if (node.Left == null) node = node.Right!;
+                    else node = node.Left;
+                    curDepth++;
                 }
             }
+            return node;
         }
         private bool MoveNextPreOrder()
         {
-            if (this._stack == null || this._stack.Count == 0) return false;
-            TNode node = this._stack.Pop();
-            int depth = this._depthStack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
-
-            if (node.Right != null)
-            {
-                this._stack.Push(node.Right);
-                this._depthStack.Push(depth + 1);
+            while (true) {
+                if (curNode == null)
+                {
+                    curNode = _root;
+                    prevNode = _root;
+                    curDepth = 0;
+                    return true;
+                }
+                if (curNode.Left == null && curNode.Right == null)
+                {
+                    if (curNode.Parent == null)
+                    {
+                        return false;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Parent;
+                    curDepth--;
+                    continue;
+                }
+                else if (curNode.Left == null)
+                {
+                    if (curNode.Right == prevNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Right;
+                    curDepth++;
+                    return true;
+                }
+                else if (curNode.Right == null)
+                {
+                    if (curNode.Left == prevNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Left;
+                    curDepth++;
+                    return true;
+                }
+                else
+                {
+                    if (curNode.Left == prevNode)
+                    {
+                        prevNode = curNode;
+                        curNode = curNode.Right;
+                        curDepth++;
+                        return true;
+                    }
+                    if (curNode.Right == prevNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Left;
+                    curDepth++;
+                    return true;
+                }
             }
-            if (node.Left != null)
-            {
-                this._stack.Push(node.Left);
-                this._depthStack.Push(depth + 1);
-            }
-            return true;
         }
         private bool MoveNextPreOrderReverse()
         {
-            if (this._stack == null || this._stack.Count == 0) return false;
-            TNode node = this._stack.Pop();
-            int depth = this._depthStack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
-            if (node.Left != null)
+            while (true)
             {
-                this._stack.Push(node.Left);
-                this._depthStack.Push(depth + 1);
+                if (curNode == null)
+                {
+                    curNode = _root;
+                    prevNode = _root;
+                    curDepth = 0;
+                    return true;
+                }
+                if (curNode.Left == null && curNode.Right == null)
+                {
+                    if (curNode.Parent == null)
+                    {
+                        return false;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Parent;
+                    curDepth--;
+                    continue;
+                }
+                else if (curNode.Right == null)
+                {
+                    if (curNode.Left == prevNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Left;
+                    curDepth++;
+                    return true;
+                }
+                else if (curNode.Left == null)
+                {
+                    if (curNode.Right == prevNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Right;
+                    curDepth++;
+                    return true;
+                }
+                else
+                {
+                    if (curNode.Right == prevNode)
+                    {
+                        prevNode = curNode;
+                        curNode = curNode.Left;
+                        curDepth++;
+                        return true;
+                    }
+                    if (curNode.Left == prevNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    curNode = curNode.Right;
+                    curDepth++;
+                    return true;
+                }
             }
-            if (node.Right != null)
-            {
-                this._stack.Push(node.Right);
-                this._depthStack.Push(depth + 1);
-            }
-
-            return true;
         }
         private bool MoveNextInorder()
         {
-            if (this._stack == null || this._stack.Count == 0) return false;
-            TNode node = this._stack.Pop();
-            int depth = this._depthStack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
-
-            if (node.Right != null)
+            while(true)
             {
-                FillFullLeft(_stack, node.Right, depth);
+                if (curNode == null)
+                {
+                    curDepth = 0;
+                    curNode = MoveFullLeft(_root);
+                    prevNode = curNode;
+                    return true;
+                }
+                else if (curNode.Left == null && curNode.Right == null)
+                {
+                    if (curNode.Parent == null) return false;
+                    prevNode = curNode;
+                    curNode = curNode.Parent;
+                    curDepth--;
+                    continue;
+                }
+                else if (curNode.Left == null)
+                {
+                    if (prevNode == curNode)
+                    {
+                        curDepth++;
+                        curNode = MoveFullLeft(curNode.Right);
+                        prevNode = curNode;
+                        return true;
+                    }
+                    if (prevNode == curNode.Right)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    return true;
+                }
+                else if (curNode.Right == null)
+                {
+                    if (prevNode == curNode.Left)
+                    {
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else if (prevNode == curNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    throw new Exception("impossible");
+                }
+                else
+                {
+                    if (prevNode == curNode.Left)
+                    {
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else if (prevNode == curNode.Right)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    else if (prevNode == curNode)
+                    {
+                        curDepth++;
+                        curNode = MoveFullLeft(curNode.Right);
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else
+                    {
+                        throw new Exception("impossible");
+                    }
+                }
             }
-            return true;
+
         }
         private bool MoveNextInorderReverse()
         {
-            if (this._stack == null || this._stack.Count == 0) return false;
-            TNode node = this._stack.Pop();
-            int depth = this._depthStack.Pop();
-            _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, depth);
-
-            if (node.Left != null)
+            while(true)
             {
-                FillFullRight(_stack, node.Left, depth);
+                if (curNode == null)
+                {
+                    curDepth = 0;
+                    curNode = MoveFullRight(_root);
+                    prevNode = curNode;
+                    return true;
+                }
+                else if (curNode.Left == null && curNode.Right == null)
+                {
+                    if (curNode.Parent == null) return false;
+                    prevNode = curNode;
+                    curNode = curNode.Parent;
+                    curDepth--;
+                    continue;
+                }
+                else if (curNode.Right == null)
+                {
+                    if (prevNode == curNode)
+                    {
+                        curDepth++;
+                        curNode = MoveFullRight(curNode.Left);
+                        prevNode = curNode;
+                        return true;
+                    }
+                    if (prevNode == curNode.Left)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    prevNode = curNode;
+                    return true;
+                }
+                else if (curNode.Left == null)
+                {
+                    if (prevNode == curNode.Right)
+                    {
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else if (prevNode == curNode)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    throw new Exception("impossible");
+                }
+                else
+                {
+                    if (prevNode == curNode.Right)
+                    {
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else if (prevNode == curNode.Left)
+                    {
+                        if (curNode.Parent == null) return false;
+                        prevNode = curNode;
+                        curNode = curNode.Parent;
+                        curDepth--;
+                        continue;
+                    }
+                    else if (prevNode == curNode)
+                    {
+                        curDepth++;
+                        curNode = MoveFullRight(curNode.Left);
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else
+                    {
+                        throw new Exception("impossible");
+                    }
+                }
             }
-            return true;
         }
-        private bool MoveNextPostOrder()
+        private bool MoveNextPostOrder(bool reverse = false)
         {
-            if (this._stack == null || this._stack.Count == 0) return false;
-            TNode node = _stack.Peek();
-            if (node.Right != null && prevNode != node.Right)
+            while(true)
             {
-                FillFullLeftRight(_stack, node.Right);
-                return MoveNextPostOrder();
+                if (curNode == null)
+                {
+                    curDepth = 0;
+                    curNode = MoveFullLeftRight(_root, reverse);
+                    prevNode = curNode;
+                    return true;
+                }
+                if (prevNode == curNode)
+                {
+                    if (curNode.Parent == null) return false;
+                    curNode = curNode.Parent;
+                    curDepth--;
+                    continue;
+                }
+                else if (curNode.Left == null)
+                {
+                    if (prevNode == curNode.Right)
+                    {
+                        prevNode = curNode;
+                        return true;
+                    }
+                }
+                else if (curNode.Right == null)
+                {
+                    if (prevNode == curNode.Left)
+                    {
+                        prevNode = curNode;
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (prevNode == curNode.Left)
+                    {
+                        if (reverse)
+                        {
+                            prevNode = curNode;
+                            return true;
+                        }
+                        curDepth++;
+                        curNode = MoveFullLeftRight(curNode.Right, reverse);
+                        prevNode = curNode;
+                        return true;
+                    }
+                    else if (prevNode == curNode.Right)
+                    {
+                        if (reverse)
+                        {
+                            curDepth++;
+                            curNode = MoveFullLeftRight(curNode.Left, reverse);
+                            prevNode = curNode;
+                            return true;
+                        }
+                        prevNode = curNode;
+                        return true;
+                    }
+                }
+                throw new Exception("impossible postOrder situation");
             }
-            else
-            {
-                prevNode = _stack.Pop();
-                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, this._stack.Count);
-            }
-            return true;
-        }
-        private bool MoveNextPostOrderReverse()
-        {
-            if (this._stack == null || this._stack.Count == 0) return false;
-            TNode node = _stack.Peek();
-            if (node.Left != null && prevNode != node.Left)
-            {
-                FillFullRightLeft(_stack, node.Left);
-                return MoveNextPostOrderReverse();
-            }
-            else
-            {
-                prevNode = _stack.Pop();
-                _current = new TreeEntry<TKey, TValue>(node.Key, node.Value, this._stack.Count);
-            }
-            return true;
         }
         public bool MoveNext()
         {
+            bool success = false;
             if (_strategy == TraversalStrategy.PreOrder)
             {
-                return MoveNextPreOrder();
+                success = MoveNextPreOrder();
             }
             else if (_strategy == TraversalStrategy.PreOrderReverse)
             {
-                return MoveNextPreOrderReverse();
+                success = MoveNextPreOrderReverse();
             }
             else if (_strategy == TraversalStrategy.InOrder)
             {
-                return MoveNextInorder();
+                success = MoveNextInorder();
             }
             else if (_strategy == TraversalStrategy.InOrderReverse)
             {
-                return MoveNextInorderReverse();
+                success = MoveNextInorderReverse();
             }
             else if (_strategy == TraversalStrategy.PostOrder)
             {
-                return MoveNextPostOrder();
+                success = MoveNextPostOrder();
             }
             else if (_strategy == TraversalStrategy.PostOrderReverse)
             {
-                return MoveNextPostOrderReverse();
+                success = MoveNextPostOrder(reverse: true);
             }
-            return false;
+            if (!success) return false;
+            _current = new TreeEntry<TKey, TValue>(curNode!.Key, curNode.Value, curDepth);
+            return success;
         }
         
         public void Reset()
         {
-            this.prevNode = this._root;
-            _stack = new Stack<TNode>();
-            _depthStack = new Stack<int>();
-            switch (this._strategy)
-            {
-                case TraversalStrategy.PreOrder:
-                case TraversalStrategy.PreOrderReverse:
-                    _stack.Push(this._root);
-                    _depthStack.Push(0);
-                    break;
-                case TraversalStrategy.InOrder:
-                    FillFullLeft(_stack, this._root, -1);
-                    break;
-                case TraversalStrategy.InOrderReverse:
-                    FillFullRight(_stack, this._root, -1);
-                    break;
-                case TraversalStrategy.PostOrder:
-                    FillFullLeftRight(_stack, this._root);
-                    break;
-                case TraversalStrategy.PostOrderReverse:
-                    FillFullRightLeft(_stack, this._root);
-                    break;
-            }
+            this.prevNode = null;
+            this.curNode = null;
+            this.curDepth = 0;
         }
 
-        
-        public void Dispose()
-        {
-            this._stack = null;
-        }
+
+        public void Dispose() { }
     }
 
     private enum TraversalStrategy { InOrder, PreOrder, PostOrder, InOrderReverse, PreOrderReverse, PostOrderReverse}

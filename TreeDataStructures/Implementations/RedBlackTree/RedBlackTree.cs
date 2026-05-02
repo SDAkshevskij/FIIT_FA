@@ -13,10 +13,10 @@ public class RedBlackTree<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, RbN
     protected override void OnNodeAdded(RbNode<TKey, TValue> newNode)
     {
         RbNode<TKey, TValue> curNode = newNode;
-        while (curNode != Root && curNode.Parent.Color == RbColor.Red)
+        while (curNode != Root && curNode.Parent!.Color == RbColor.Red)
         {
             RbNode<TKey, TValue> parent = curNode.Parent;
-            RbNode<TKey, TValue> grand = parent!.Parent;
+            RbNode<TKey, TValue> grand = parent.Parent!;
             RbNode<TKey, TValue>? uncle = grand.IsLeftChild ? grand.Right: grand.Left;
             if (uncle != null && uncle.Color == RbColor.Red)
             {
