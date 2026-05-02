@@ -18,6 +18,12 @@ public sealed class BetterBigInteger : IBigInteger
 
     private const int KaratsubaThreshold = 32;
     private const int FftThreshold = 256;
+    private const int BitsPerByte = 8;
+    private const int UIntBits = sizeof(uint) * BitsPerByte;
+    private const int HalfUIntBits = UIntBits / 2;
+    private const uint HalfMask = (1u << HalfUIntBits) - 1u;
+    private const int UIntBitIndexMask = UIntBits - 1;
+    private const uint UIntHighBitMask = 1u << (UIntBits - 1);
 
     public bool IsNegative => _signBit == 1;
 
@@ -153,34 +159,57 @@ public sealed class BetterBigInteger : IBigInteger
         if (multiplier == 1)
             return;
 
-        ulong carry = 0;
+        int len = digits.Count;
 
-        for (int i = 0; i < digits.Count; i++)
+        uint[] result = new uint[len + 1];
+
+        for (int i = 0; i < len; i++)
         {
-            ulong cur = (ulong)digits[i] * multiplier + carry;
-            digits[i] = (uint)cur;
-            carry = cur >> 32;
+            AddUIntProductByHalves(
+                result,
+                i,
+                digits[i],
+                multiplier);
         }
 
-        if (carry != 0)
-            digits.Add((uint)carry);
+        int actualLength = TrimmedLength(result);
+
+        digits.Clear();
+
+        if (actualLength == 0)
+        {
+            digits.Add(0);
+            return;
+        }
+
+        for (int i = 0; i < actualLength; i++)
+            digits.Add(result[i]);
     }
 
     private static void AddSmall(List<uint> digits, uint value)
     {
-        ulong carry = value;
-        int i = 0;
+        if (value == 0)
+            return;
 
-        while (carry != 0 && i < digits.Count)
+        int index = 0;
+        uint carry = value;
+
+        while (carry != 0)
         {
-            ulong cur = (ulong)digits[i] + carry;
-            digits[i] = (uint)cur;
-            carry = cur >> 32;
-            i++;
-        }
+            if (index == digits.Count)
+            {
+                digits.Add(carry);
+                return;
+            }
 
-        if (carry != 0)
-            digits.Add((uint)carry);
+            uint old = digits[index];
+            uint sum = old + carry;
+
+            digits[index] = sum;
+
+            carry = sum < old ? 1u : 0u;
+            index++;
+        }
     }
 
     private static void TrimLeadingZeros(List<uint> digits)
@@ -413,7 +442,7 @@ public sealed class BetterBigInteger : IBigInteger
     {
         int dividendBitLength = GetBitLength(dividend);
 
-        quotient = new uint[(dividendBitLength + 31) / 32];
+        quotient = new uint[(dividendBitLength + UIntBits - 1) / UIntBits];
         remainder = new uint[] { 0 };
 
         for (int bit = dividendBitLength - 1; bit >= 0; bit--)
@@ -447,27 +476,32 @@ public sealed class BetterBigInteger : IBigInteger
     private static uint[] ShiftLeftOne(ReadOnlySpan<uint> digits)
     {
         int len = TrimmedLength(digits);
+
         if (len == 0)
             return new uint[] { 0 };
 
         uint[] result = new uint[len + 1];
-        ulong carry = 0;
+
+        uint carry = 0;
 
         for (int i = 0; i < len; i++)
         {
-            ulong cur = ((ulong)digits[i] << 1) | carry;
-            result[i] = (uint)cur;
-            carry = cur >> 32;
+            uint current = digits[i];
+
+            result[i] = (current << 1) | carry;
+
+            carry = (current & UIntHighBitMask) != 0 ? 1u : 0u;
         }
 
-        result[len] = (uint)carry;
+        result[len] = carry;
+
         return TrimLeadingZeros(result);
     }
 
     private static bool GetBit(ReadOnlySpan<uint> digits, int bitIndex)
     {
-        int wordIndex = bitIndex / 32;
-        int bitOffset = bitIndex % 32;
+        int wordIndex = bitIndex / UIntBits;
+        int bitOffset = bitIndex & UIntBitIndexMask;
 
         if (wordIndex >= digits.Length)
             return false;
@@ -477,14 +511,16 @@ public sealed class BetterBigInteger : IBigInteger
 
     private static void SetBit(uint[] digits, int bitIndex)
     {
-        int wordIndex = bitIndex / 32;
-        int bitOffset = bitIndex % 32;
+        int wordIndex = bitIndex / UIntBits;
+        int bitOffset = bitIndex & UIntBitIndexMask;
+
         digits[wordIndex] |= 1u << bitOffset;
     }
 
     private static int GetBitLength(ReadOnlySpan<uint> digits)
     {
         int len = TrimmedLength(digits);
+
         if (len == 0)
             return 0;
 
@@ -497,7 +533,7 @@ public sealed class BetterBigInteger : IBigInteger
             msw >>= 1;
         }
 
-        return (len - 1) * 32 + bitsInMsw;
+        return (len - 1) * UIntBits + bitsInMsw;
     }
 
     private static int CompareMagnitudes(ReadOnlySpan<uint> a, ReadOnlySpan<uint> b)
@@ -519,48 +555,39 @@ public sealed class BetterBigInteger : IBigInteger
 
     private static uint[] AddMagnitudes(ReadOnlySpan<uint> a, ReadOnlySpan<uint> b)
     {
-        int maxLen = Math.Max(a.Length, b.Length);
+        int aLen = TrimmedLength(a);
+        int bLen = TrimmedLength(b);
+
+        int maxLen = Math.Max(aLen, bLen);
         uint[] result = new uint[maxLen + 1];
 
-        ulong carry = 0;
+        uint carry = 0;
 
         for (int i = 0; i < maxLen; i++)
         {
-            ulong av = i < a.Length ? a[i] : 0;
-            ulong bv = i < b.Length ? b[i] : 0;
+            uint av = i < aLen ? a[i] : 0u;
+            uint bv = i < bLen ? b[i] : 0u;
 
-            ulong sum = av + bv + carry;
-            result[i] = (uint)sum;
-            carry = sum >> 32;
+            result[i] = AddThreeUInt(av, bv, carry, out carry);
         }
 
-        result[maxLen] = (uint)carry;
+        result[maxLen] = carry;
+
         return result;
     }
 
     private static uint[] SubtractMagnitudes(ReadOnlySpan<uint> a, ReadOnlySpan<uint> b)
     {
         uint[] result = new uint[a.Length];
-        long borrow = 0;
+
+        uint borrow = 0;
 
         for (int i = 0; i < a.Length; i++)
         {
-            long av = a[i];
-            long bv = i < b.Length ? b[i] : 0;
+            uint av = a[i];
+            uint bv = i < b.Length ? b[i] : 0u;
 
-            long diff = av - bv - borrow;
-
-            if (diff < 0)
-            {
-                diff += 1L << 32;
-                borrow = 1;
-            }
-            else
-            {
-                borrow = 0;
-            }
-
-            result[i] = (uint)diff;
+            result[i] = SubtractTwoUInt(av, bv, borrow, out borrow);
         }
 
         return result;
@@ -706,6 +733,7 @@ public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b
     {
         if (a is null)
             throw new ArgumentNullException(nameof(a));
+
         if (shift < 0)
             throw new ArgumentOutOfRangeException(nameof(shift));
 
@@ -718,30 +746,30 @@ public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b
         ReadOnlySpan<uint> digits = a.GetDigits();
         int len = TrimmedLength(digits);
 
-        int wordShift = shift / 32;
-        int bitShift = shift % 32;
+        int wordShift = shift / UIntBits;
+        int bitShift = shift & UIntBitIndexMask;
 
         uint[] result = new uint[len + wordShift + 1];
 
         if (bitShift == 0)
         {
             for (int i = 0; i < len; i++)
-            {
                 result[i + wordShift] = digits[i];
-            }
         }
         else
         {
-            ulong carry = 0;
-
             for (int i = 0; i < len; i++)
             {
-                ulong cur = ((ulong)digits[i] << bitShift) | carry;
-                result[i + wordShift] = (uint)cur;
-                carry = cur >> 32;
-            }
+                uint word = digits[i];
 
-            result[len + wordShift] = (uint)carry;
+                uint lowPart = word << bitShift;
+                uint highPart = word >> (UIntBits - bitShift);
+
+                result[i + wordShift] |= lowPart;
+
+                if (highPart != 0)
+                    AddUInt(result, i + wordShift + 1, highPart);
+            }
         }
 
         return new BetterBigInteger(result, a.IsNegative);
@@ -770,24 +798,26 @@ public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b
         uint[] src = ToTwosComplementWords(value.GetDigits(), value.IsNegative, wordCount);
         uint[] dst = new uint[wordCount];
 
-        int wordShift = shift / 32;
-        int bitShift = shift % 32;
+        int wordShift = shift / UIntBits;
+        int bitShift = shift & UIntBitIndexMask;
+
         uint fill = value.IsNegative ? uint.MaxValue : 0u;
 
         for (int i = 0; i < wordCount; i++)
         {
             int srcIndex = i + wordShift;
 
-            ulong low = srcIndex < wordCount ? src[srcIndex] : fill;
+            uint low = srcIndex < wordCount ? src[srcIndex] : fill;
 
             if (bitShift == 0)
             {
-                dst[i] = (uint)low;
+                dst[i] = low;
             }
             else
             {
-                ulong high = (srcIndex + 1) < wordCount ? src[srcIndex + 1] : fill;
-                dst[i] = (uint)((low >> bitShift) | (high << (32 - bitShift)));
+                uint high = srcIndex + 1 < wordCount ? src[srcIndex + 1] : fill;
+
+                dst[i] = (low >> bitShift) | (high << (UIntBits - bitShift));
             }
         }
 
@@ -818,33 +848,26 @@ public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b
 
     private static BetterBigInteger FromTwosComplementWords(ReadOnlySpan<uint> words)
     {
-        bool isNegative = words.Length > 0 && (words[words.Length - 1] & 0x80000000u) != 0;
+        bool isNegative =
+            words.Length > 0 &&
+            (words[words.Length - 1] & UIntHighBitMask) != 0;
 
         if (!isNegative)
-        {
             return new BetterBigInteger(TrimLeadingZeros(words), false);
-        }
 
         uint[] magnitude = new uint[words.Length];
+
         for (int i = 0; i < words.Length; i++)
-        {
             magnitude[i] = ~words[i];
-        }
 
         AddOneInPlace(magnitude);
+
         return new BetterBigInteger(TrimLeadingZeros(magnitude), true);
     }
 
     private static void AddOneInPlace(uint[] words)
     {
-        ulong carry = 1;
-
-        for (int i = 0; i < words.Length && carry != 0; i++)
-        {
-            ulong sum = (ulong)words[i] + carry;
-            words[i] = (uint)sum;
-            carry = sum >> 32;
-        }
+        AddUInt(words, 0, 1u);
     }
 
     public static bool operator ==(BetterBigInteger a, BetterBigInteger b) => Equals(a, b);
@@ -885,24 +908,29 @@ public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b
         if (divisor == 0)
             throw new DivideByZeroException();
 
-        int len = TrimmedLength(digits);
-        if (len == 0)
+        int bitLength = GetBitLength(digits);
+
+        if (bitLength == 0)
         {
             remainder = 0;
             return Array.Empty<uint>();
         }
 
-        uint[] quotient = new uint[len];
-        ulong rem = 0;
+        uint[] quotient = new uint[(bitLength + UIntBits - 1) / UIntBits];
 
-        for (int i = len - 1; i >= 0; i--)
+        uint rem = 0;
+
+        for (int bit = bitLength - 1; bit >= 0; bit--)
         {
-            ulong cur = (rem << 32) | digits[i];
-            quotient[i] = (uint)(cur / divisor);
-            rem = cur % divisor;
+            bool inputBit = GetBit(digits, bit);
+
+            rem = ShiftRemainderLeftOneAndAppendBit(rem, inputBit, divisor, out bool subtractDivisor);
+
+            if (subtractDivisor)
+                SetBit(quotient, bit);
         }
 
-        remainder = (uint)rem;
+        remainder = rem;
         return TrimLeadingZeros(quotient);
     }
 
@@ -912,6 +940,128 @@ public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b
             return (char)('0' + digit);
 
         return (char)('A' + (digit - 10));
+    }
+
+    private static void AddUInt(uint[] target, int index, uint value)
+    {
+        while (value != 0)
+        {
+            if (index >= target.Length)
+                throw new InvalidOperationException("Buffer overflow.");
+
+            uint old = target[index];
+            uint sum = old + value;
+
+            target[index] = sum;
+
+            value = sum < old ? 1u : 0u;
+            index++;
+        }
+    }
+
+    private static uint AddThreeUInt(
+        uint a,
+        uint b,
+        uint carryIn,
+        out uint carryOut)
+    {
+        uint sum1 = a + b;
+        uint carry1 = sum1 < a ? 1u : 0u;
+
+        uint sum2 = sum1 + carryIn;
+        uint carry2 = sum2 < sum1 ? 1u : 0u;
+
+        carryOut = carry1 | carry2;
+
+        return sum2;
+    }
+
+    private static uint SubtractTwoUInt(
+        uint a,
+        uint b,
+        uint borrowIn,
+        out uint borrowOut)
+    {
+        uint subtrahend = b + borrowIn;
+        uint subtrahendOverflow = subtrahend < b ? 1u : 0u;
+
+        if (subtrahendOverflow != 0)
+        {
+            borrowOut = 1u;
+            return a;
+        }
+
+        if (a < subtrahend)
+        {
+            borrowOut = 1u;
+            return a - subtrahend;
+        }
+
+        borrowOut = 0u;
+        return a - subtrahend;
+    }
+
+    private static void AddUIntProductByHalves(
+        uint[] result,
+        int index,
+        uint left,
+        uint right)
+    {
+        uint leftLow = left & HalfMask;
+        uint leftHigh = left >> HalfUIntBits;
+
+        uint rightLow = right & HalfMask;
+        uint rightHigh = right >> HalfUIntBits;
+
+        uint p00 = leftLow * rightLow;
+        uint p01 = leftLow * rightHigh;
+        uint p10 = leftHigh * rightLow;
+        uint p11 = leftHigh * rightHigh;
+
+        AddUInt(result, index, p00);
+
+        AddShiftedHalfProduct(result, index, p01);
+        AddShiftedHalfProduct(result, index, p10);
+
+        AddUInt(result, index + 1, p11);
+    }
+
+    private static uint ShiftRemainderLeftOneAndAppendBit(
+    uint remainder,
+    bool bit,
+    uint divisor,
+    out bool subtractDivisor)
+    {
+        bool overflow = (remainder & UIntHighBitMask) != 0;
+
+        uint candidate = remainder << 1;
+
+        if (bit)
+            candidate |= 1u;
+
+        if (overflow || candidate >= divisor)
+        {
+            subtractDivisor = true;
+            return candidate - divisor;
+        }
+
+        subtractDivisor = false;
+        return candidate;
+    }
+
+    private static void AddShiftedHalfProduct(
+        uint[] result,
+        int index,
+        uint product)
+    {
+        uint lowPart = product << HalfUIntBits;
+        uint highPart = product >> HalfUIntBits;
+
+        if (lowPart != 0)
+            AddUInt(result, index, lowPart);
+
+        if (highPart != 0)
+            AddUInt(result, index + 1, highPart);
     }
 
 }

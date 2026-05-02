@@ -8,6 +8,12 @@ internal class FftMultiplier : IMultiplier
     private const int MinTransformLength = 16;
     private const int GuardBits = 4;
 
+    private const int BitsPerByte = 8;
+    private const int UIntBits = sizeof(uint) * BitsPerByte;
+    private const int HalfUIntBits = UIntBits / 2;
+    private const uint HalfMask = (1u << HalfUIntBits) - 1u;
+    private const int UIntBitIndexMask = UIntBits - 1;
+
     public BetterBigInteger Multiply(BetterBigInteger a, BetterBigInteger b)
     {
         if (a is null)
@@ -161,18 +167,6 @@ internal class FftMultiplier : IMultiplier
         {
             int logN = Log2PowerOfTwo(n);
 
-            /*
-             * n = 2^logN.
-             *
-             * В кольце Z / (2^M + 1):
-             *
-             *     2^M ≡ -1
-             *     2^(2M) ≡ 1
-             *
-             * Поэтому обратный элемент к 2^logN:
-             *
-             *     2^(-logN) ≡ 2^(2M - logN)
-             */
             int inverseShift = (twoM - logN) % twoM;
 
             for (int i = 0; i < n; i++)
@@ -189,19 +183,6 @@ internal class FftMultiplier : IMultiplier
             int ringBits = n;
             int logN = Log2PowerOfTwo(n);
 
-            /*
-             * Каждый коэффициент после свёртки ограничен примерно:
-             *
-             *     n * (2^blockBits - 1)^2
-             *
-             * Нужно, чтобы он точно помещался в модуль:
-             *
-             *     2^ringBits + 1
-             *
-             * Поэтому берём:
-             *
-             *     2 * blockBits + log2(n) + запас <= ringBits
-             */
             int blockBits = (ringBits - logN - GuardBits) / 2;
 
             if (blockBits > 0)
@@ -245,8 +226,8 @@ internal class FftMultiplier : IMultiplier
         while (copied < bitCount)
         {
             int absoluteBit = startBit + copied;
-            int sourceWordIndex = absoluteBit >> 5;
-            int sourceBitOffset = absoluteBit & 31;
+            int sourceWordIndex = absoluteBit / UIntBits;
+            int sourceBitOffset = absoluteBit & UIntBitIndexMask;
 
             uint value = 0;
 
@@ -255,12 +236,12 @@ internal class FftMultiplier : IMultiplier
                 value = source[sourceWordIndex] >> sourceBitOffset;
 
                 if (sourceBitOffset != 0 && sourceWordIndex + 1 < source.Length)
-                    value |= source[sourceWordIndex + 1] << (32 - sourceBitOffset);
+                    value |= source[sourceWordIndex + 1] << (UIntBits - sourceBitOffset);
             }
 
-            int take = Math.Min(32, bitCount - copied);
+            int take = Math.Min(UIntBits, bitCount - copied);
 
-            if (take < 32)
+            if (take < UIntBits)
                 value &= (1u << take) - 1u;
 
             raw[dstIndex++] = value;
@@ -282,12 +263,10 @@ internal class FftMultiplier : IMultiplier
                 "Convolution coefficient overflowed the Schönhage-Strassen modulus.");
         }
 
-        int wordShift = (int)(bitShift >> 5);
-        int bitOffset = (int)(bitShift & 31);
+        int wordShift = (int)(bitShift / UIntBits);
+        int bitOffset = (int)(bitShift & UIntBitIndexMask);
 
         uint[] words = value.Words;
-
-        ulong shiftCarry = 0;
 
         for (int i = 0; i < ctx.LowWordCount; i++)
         {
@@ -296,36 +275,83 @@ internal class FftMultiplier : IMultiplier
             if (i == ctx.LowWordCount - 1)
                 word &= ctx.LastLowWordMask;
 
-            ulong shifted = ((ulong)word << bitOffset) | shiftCarry;
+            if (word == 0)
+                continue;
 
-            uint low = (uint)shifted;
+            if (bitOffset == 0)
+            {
+                AddUInt(target, wordShift + i, word);
+            }
+            else
+            {
+                uint lowPart = word << bitOffset;
+                uint highPart = word >> (UIntBits - bitOffset);
 
-            if (low != 0)
-                AddUInt32(target, wordShift + i, low);
+                if (lowPart != 0)
+                    AddUInt(target, wordShift + i, lowPart);
 
-            shiftCarry = shifted >> 32;
+                if (highPart != 0)
+                    AddUInt(target, wordShift + i + 1, highPart);
+            }
         }
-
-        if (shiftCarry != 0)
-            AddUInt32(target, wordShift + ctx.LowWordCount, (uint)shiftCarry);
     }
 
-    private static void AddUInt32(uint[] target, int index, uint value)
+    private static void AddUInt(uint[] target, int index, uint value)
     {
-        ulong carry = value;
-
-        while (carry != 0)
+        while (value != 0)
         {
             if (index >= target.Length)
                 throw new InvalidOperationException("Result buffer is too small.");
 
-            ulong sum = (ulong)target[index] + carry;
+            uint old = target[index];
+            uint sum = old + value;
 
-            target[index] = (uint)sum;
-            carry = sum >> 32;
+            target[index] = sum;
 
+            value = sum < old ? 1u : 0u;
             index++;
         }
+    }
+
+    private static uint AddThreeUInt(
+        uint a,
+        uint b,
+        uint carryIn,
+        out uint carryOut)
+    {
+        uint sum1 = a + b;
+        uint carry1 = sum1 < a ? 1u : 0u;
+
+        uint sum2 = sum1 + carryIn;
+        uint carry2 = sum2 < sum1 ? 1u : 0u;
+
+        carryOut = carry1 | carry2;
+        return sum2;
+    }
+
+    private static uint SubtractTwoUInt(
+        uint a,
+        uint b,
+        uint borrowIn,
+        out uint borrowOut)
+    {
+        uint subtrahend = b + borrowIn;
+        uint subtrahendOverflow = subtrahend < b ? 1u : 0u;
+
+        if (subtrahendOverflow != 0)
+        {
+            borrowOut = 1u;
+            return a;
+        }
+
+        if (a < subtrahend)
+        {
+            borrowOut = 1u;
+            return a - subtrahend;
+        }
+
+        borrowOut = 0u;
+        return a - subtrahend;
     }
 
     private static int CalculateResultWordCapacity(
@@ -333,8 +359,8 @@ internal class FftMultiplier : IMultiplier
         int blockBits,
         int ringBits)
     {
-        long maxBits = (long)convolutionLength * blockBits + ringBits + 64L;
-        long wordCount = (maxBits + 31) / 32 + 4;
+        long maxBits = (long)convolutionLength * blockBits + ringBits + UIntBits * 2L;
+        long wordCount = (maxBits + UIntBits - 1) / UIntBits + 4;
 
         if (wordCount > int.MaxValue)
             throw new InvalidOperationException("Result is too large.");
@@ -359,7 +385,7 @@ internal class FftMultiplier : IMultiplier
             top >>= 1;
         }
 
-        return (len - 1) * 32 + topBits;
+        return (len - 1) * UIntBits + topBits;
     }
 
     private static int TrimmedLength(ReadOnlySpan<uint> digits)
@@ -459,16 +485,18 @@ internal class FftMultiplier : IMultiplier
             ModBits = modBits;
             TwoModBits = modBits * 2;
 
-            _topWordIndex = modBits >> 5;
-            _topBitOffset = modBits & 31;
+            _topWordIndex = modBits / UIntBits;
+            _topBitOffset = modBits & UIntBitIndexMask;
 
             ValueWordCount = _topWordIndex + 1;
-            LowWordCount = (modBits + 31) / 32;
+            LowWordCount = (modBits + UIntBits - 1) / UIntBits;
 
-            if ((modBits & 31) == 0)
+            int lowRemainder = modBits & UIntBitIndexMask;
+
+            if (lowRemainder == 0)
                 LastLowWordMask = uint.MaxValue;
             else
-                LastLowWordMask = (1u << (modBits & 31)) - 1u;
+                LastLowWordMask = (1u << lowRemainder) - 1u;
 
             _modulus = new uint[ValueWordCount];
             _modulus[0] = 1u;
@@ -570,19 +598,6 @@ internal class FftMultiplier : IMultiplier
             if (cmp == 0)
                 return Array.Empty<uint>();
 
-            /*
-             * Основное свойство кольца:
-             *
-             *     2^M ≡ -1 mod (2^M + 1)
-             *
-             * Любое число X можно записать:
-             *
-             *     X = low + high * 2^M
-             *
-             * Тогда:
-             *
-             *     X ≡ low - high mod (2^M + 1)
-             */
             uint[] low = LowBits(value);
             uint[] high = ShiftRightBits(value, ModBits);
 
@@ -627,7 +642,7 @@ internal class FftMultiplier : IMultiplier
 
             uint mask;
 
-            if (_topBitOffset == 31)
+            if (_topBitOffset == UIntBits - 1)
                 mask = uint.MaxValue;
             else
                 mask = (1u << (_topBitOffset + 1)) - 1u;
@@ -644,21 +659,17 @@ internal class FftMultiplier : IMultiplier
 
             uint[] result = new uint[max + 1];
 
-            ulong carry = 0;
+            uint carry = 0;
 
             for (int i = 0; i < max; i++)
             {
-                ulong a = i < left.Length ? left[i] : 0UL;
-                ulong b = i < right.Length ? right[i] : 0UL;
+                uint a = i < left.Length ? left[i] : 0u;
+                uint b = i < right.Length ? right[i] : 0u;
 
-                ulong sum = a + b + carry;
-
-                result[i] = (uint)sum;
-                carry = sum >> 32;
+                result[i] = AddThreeUInt(a, b, carry, out carry);
             }
 
-            if (carry != 0)
-                result[max] = (uint)carry;
+            result[max] = carry;
 
             return Trim(result);
         }
@@ -667,26 +678,14 @@ internal class FftMultiplier : IMultiplier
         {
             uint[] result = new uint[left.Length];
 
-            long borrow = 0;
+            uint borrow = 0;
 
             for (int i = 0; i < left.Length; i++)
             {
-                long a = left[i];
-                long b = i < right.Length ? right[i] : 0L;
+                uint a = left[i];
+                uint b = i < right.Length ? right[i] : 0u;
 
-                long current = a - b - borrow;
-
-                if (current < 0)
-                {
-                    current += 1L << 32;
-                    borrow = 1;
-                }
-                else
-                {
-                    borrow = 0;
-                }
-
-                result[i] = (uint)current;
+                result[i] = SubtractTwoUInt(a, b, borrow, out borrow);
             }
 
             return Trim(result);
@@ -704,33 +703,74 @@ internal class FftMultiplier : IMultiplier
 
             for (int i = 0; i < left.Length; i++)
             {
-                ulong carry = 0;
-
                 for (int j = 0; j < right.Length; j++)
                 {
-                    ulong current =
-                        result[i + j] +
-                        (ulong)left[i] * right[j] +
-                        carry;
-
-                    result[i + j] = (uint)current;
-                    carry = current >> 32;
-                }
-
-                int k = i + right.Length;
-
-                while (carry != 0)
-                {
-                    ulong current = result[k] + carry;
-
-                    result[k] = (uint)current;
-                    carry = current >> 32;
-
-                    k++;
+                    AddUIntProductByHalves(
+                        result,
+                        i + j,
+                        left[i],
+                        right[j]);
                 }
             }
 
             return Trim(result);
+        }
+
+        private static void AddUIntProductByHalves(
+            uint[] result,
+            int index,
+            uint left,
+            uint right)
+        {
+            uint leftLow = left & HalfMask;
+            uint leftHigh = left >> HalfUIntBits;
+
+            uint rightLow = right & HalfMask;
+            uint rightHigh = right >> HalfUIntBits;
+
+            uint p00 = leftLow * rightLow;
+            uint p01 = leftLow * rightHigh;
+            uint p10 = leftHigh * rightLow;
+            uint p11 = leftHigh * rightHigh;
+
+            AddUInt(result, index, p00);
+
+            AddShiftedHalfProduct(result, index, p01);
+            AddShiftedHalfProduct(result, index, p10);
+
+            AddUInt(result, index + 1, p11);
+        }
+
+        private static void AddShiftedHalfProduct(
+            uint[] result,
+            int index,
+            uint product)
+        {
+            uint lowPart = product << HalfUIntBits;
+            uint highPart = product >> HalfUIntBits;
+
+            if (lowPart != 0)
+                AddUInt(result, index, lowPart);
+
+            if (highPart != 0)
+                AddUInt(result, index + 1, highPart);
+        }
+
+        private static void AddUInt(uint[] result, int index, uint value)
+        {
+            while (value != 0)
+            {
+                if (index >= result.Length)
+                    throw new InvalidOperationException("Ring multiplication buffer overflow.");
+
+                uint old = result[index];
+                uint sum = old + value;
+
+                result[index] = sum;
+
+                value = sum < old ? 1u : 0u;
+                index++;
+            }
         }
 
         private static uint[] ShiftLeftBits(uint[] value, int shift)
@@ -740,8 +780,8 @@ internal class FftMultiplier : IMultiplier
             if (value.Length == 0)
                 return Array.Empty<uint>();
 
-            int wordShift = shift >> 5;
-            int bitShift = shift & 31;
+            int wordShift = shift / UIntBits;
+            int bitShift = shift & UIntBitIndexMask;
 
             uint[] result = new uint[value.Length + wordShift + 1];
 
@@ -751,18 +791,18 @@ internal class FftMultiplier : IMultiplier
                 return Trim(result);
             }
 
-            ulong carry = 0;
-
             for (int i = 0; i < value.Length; i++)
             {
-                ulong current = ((ulong)value[i] << bitShift) | carry;
+                uint word = value[i];
 
-                result[i + wordShift] = (uint)current;
-                carry = current >> 32;
+                uint lowPart = word << bitShift;
+                uint highPart = word >> (UIntBits - bitShift);
+
+                result[i + wordShift] |= lowPart;
+
+                if (highPart != 0)
+                    result[i + wordShift + 1] |= highPart;
             }
-
-            if (carry != 0)
-                result[value.Length + wordShift] = (uint)carry;
 
             return Trim(result);
         }
@@ -774,8 +814,8 @@ internal class FftMultiplier : IMultiplier
             if (value.Length == 0)
                 return Array.Empty<uint>();
 
-            int wordShift = shift >> 5;
-            int bitShift = shift & 31;
+            int wordShift = shift / UIntBits;
+            int bitShift = shift & UIntBitIndexMask;
 
             if (wordShift >= value.Length)
                 return Array.Empty<uint>();
@@ -788,7 +828,7 @@ internal class FftMultiplier : IMultiplier
                 uint current = value[i + wordShift] >> bitShift;
 
                 if (bitShift != 0 && i + wordShift + 1 < value.Length)
-                    current |= value[i + wordShift + 1] << (32 - bitShift);
+                    current |= value[i + wordShift + 1] << (UIntBits - bitShift);
 
                 result[i] = current;
             }
